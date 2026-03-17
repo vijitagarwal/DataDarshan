@@ -543,7 +543,18 @@ def _render_mini_chart(chart: dict) -> None:
         )
 
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToAdd': ['resetScale2d'],
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+            'scrollZoom': True,
+            'doubleClick': 'reset'
+        }
+    )
     st.markdown('</div>', unsafe_allow_html=True)
 
 
@@ -615,7 +626,18 @@ def _render_entry(entry: dict) -> None:
 
     with col_chart:
         st.markdown('<div class="chart-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            'displayModeBar': True,
+            'displaylogo': False,
+            'modeBarButtonsToAdd': ['resetScale2d'],
+            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+            'scrollZoom': True,
+            'doubleClick': 'reset'
+        }
+    )
         st.markdown('</div>', unsafe_allow_html=True)
 
     with col_right:

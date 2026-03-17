@@ -65,6 +65,8 @@ def _base_layout(title: str, x_label: str, y_label: str) -> dict:
             tickfont=dict(color=_WHITE),
             title=dict(font=dict(color=_WHITE)),
         ),
+        dragmode='zoom',
+        modebar_add=['resetScale2d', 'zoomIn2d', 'zoomOut2d'],
     )
 
 
@@ -231,6 +233,8 @@ def _pie(df: pd.DataFrame, names_col: str, values_col: str, result: dict) -> go.
         margin=dict(t=60, b=20, l=20, r=20),
         legend=dict(font=dict(color=_WHITE), bgcolor="rgba(0,0,0,0)"),
         hoverlabel=dict(bgcolor=_BG_HOVER, font_color=_WHITE),
+        dragmode='zoom',
+        modebar_add=['resetScale2d', 'zoomIn2d', 'zoomOut2d'],
     )
     return fig
 
