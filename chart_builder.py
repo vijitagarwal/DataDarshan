@@ -99,10 +99,16 @@ def _bar(df: pd.DataFrame, x: str, y: str, result: dict) -> go.Figure:
             color_continuous_scale=_CONTINUOUS_SCALE,
             title=title,
         )
+        all_vals = [v for trace in fig.data
+                    for v in (list(trace.x)
+                    if hasattr(trace, 'x')
+                    and trace.x is not None else [])]
+        max_val = max(all_vals) if all_vals else 1
+        fmt = '%{x:.3f}' if max_val < 100 else '%{x:.2s}'
         fig.update_traces(
             hovertemplate=_hover_fmt_h(y),
             marker_line_width=0,
-            texttemplate="%{x:.2s}",
+            texttemplate=fmt,
             textposition="outside",
             textfont=dict(color=_WHITE, size=11),
         )
@@ -128,10 +134,16 @@ def _bar(df: pd.DataFrame, x: str, y: str, result: dict) -> go.Figure:
             color=x,
             color_discrete_sequence=bar_colors,
         )
+        all_vals = [v for trace in fig.data
+                    for v in (list(trace.y)
+                    if hasattr(trace, 'y')
+                    and trace.y is not None else [])]
+        max_val = max(all_vals) if all_vals else 1
+        fmt = '%{y:.3f}' if max_val < 100 else '%{y:.2s}'
         fig.update_traces(
             hovertemplate=_hover_fmt(y),
             marker_line_width=0,
-            texttemplate="%{y:.2s}",
+            texttemplate=fmt,
             textposition="outside",
             textfont=dict(color=_WHITE, size=11),
         )
