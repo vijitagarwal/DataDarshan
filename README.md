@@ -3,7 +3,7 @@
 
 > Natural language → Interactive charts → AI insights. Instantly.
 
-🔗 **Live Demo:** https://datadarshanam.streamlit.app
+🔗 **Live Demo:** https://datadarsha.nam.streamlit.app
 
 ---
 

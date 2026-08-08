@@ -1,7 +1,53 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
+
+import re
+
 import pandas as pd
 
 DATA_PATH = "sales.csv"
+ROW_COUNT_METRIC = "__row_count"
+_TIME_COLUMNS = {"year", "month", "month_name", "quarter"}
+_MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def _is_likely_date_column(name: str, series: pd.Series) -> bool:
+    """Heuristic for uploaded CSVs where date columns arrive as strings."""
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return True
+
+    name_hint = bool(re.search(r"date|time|created|updated|day", name, re.I))
+    if not name_hint or not pd.api.types.is_object_dtype(series):
+        return False
+
+    sample = series.dropna().astype(str).head(100)
+    if sample.empty:
+        return False
+
+    parsed = pd.to_datetime(sample, errors="coerce")
+    return parsed.notna().mean() >= 0.75
+
+
+def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+
+    date_columns: list[str] = []
+    for col in df.columns:
+        if _is_likely_date_column(col, df[col]):
+            converted = pd.to_datetime(df[col], errors="coerce")
+            if converted.notna().any():
+                df[col] = converted
+                date_columns.append(col)
+
+    if date_columns:
+        primary_date = "order_date" if "order_date" in date_columns else date_columns[0]
+        df["year"]       = df[primary_date].dt.year.astype("Int64")
+        df["month"]      = df[primary_date].dt.month.astype("Int64")
+        df["month_name"] = df[primary_date].dt.strftime("%b")
+        df["quarter"]    = df[primary_date].dt.quarter.astype("Int64")
+
+    return df
 
 # ---------------------------------------------------------------------------
 # Module-level data load (cached for the lifetime of the process)
@@ -9,12 +55,7 @@ DATA_PATH = "sales.csv"
 
 def _load_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
-    df["order_date"]  = pd.to_datetime(df["order_date"])
-    df["year"]        = df["order_date"].dt.year
-    df["month"]       = df["order_date"].dt.month
-    df["month_name"]  = df["order_date"].dt.strftime("%b")
-    df["quarter"]     = df["order_date"].dt.quarter
-    return df
+    return _prepare_dataframe(df)
 
 _DF: pd.DataFrame = _load_data(DATA_PATH)
 
@@ -43,10 +84,6 @@ _AGG_FUNCS = {
 
 # Columns that represent ordered time for nicer sort ordering
 _TIME_DIMS = {"year", "month", "quarter"}
-
-# Human-readable month ordering when month_name is a dimension
-_MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 
 def _err(message: str) -> dict:
@@ -113,11 +150,23 @@ def _aggregate(
     aggregation: str,
 ) -> tuple[pd.DataFrame, str | None]:
     """Group df by dimensions and aggregate metric. Returns (result_df, error_or_None)."""
+    if metric == ROW_COUNT_METRIC:
+        if dimensions:
+            missing = [d for d in dimensions if d not in df.columns]
+            if missing:
+                return df, f"Dimension column(s) not found: {missing}"
+            result = df.groupby(dimensions, observed=True).size().reset_index(name=metric)
+        else:
+            result = pd.DataFrame({metric: [len(df)]})
+        return result, None
+
     if metric not in df.columns:
+        numeric_cols = [
+            col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])
+        ]
         return df, (
             f"Metric column '{metric}' not found. "
-            f"Numeric columns available: price, discount_percent, quantity_sold, "
-            f"rating, review_count, discounted_price, total_revenue"
+            f"Numeric columns available: {', '.join(numeric_cols) or 'none'}"
         )
 
     agg_func = _AGG_FUNCS.get(aggregation, "sum")
@@ -209,19 +258,220 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     Prepare and enrich a DataFrame with date columns.
     Handles missing date columns gracefully (e.g., custom CSV uploads).
     """
-    if "order_date" in df.columns:
-        df = df.copy()
-        df["order_date"] = pd.to_datetime(df["order_date"], errors="coerce")
-        df["year"]       = df["order_date"].dt.year
-        df["month"]      = df["order_date"].dt.month
-        df["month_name"] = df["order_date"].dt.strftime("%b")
-        df["quarter"]    = df["order_date"].dt.quarter
-    return df
+    return _prepare_dataframe(df)
+
+
+def set_dataframe(df: pd.DataFrame) -> None:
+    """Replace the active DataFrame used by run_query."""
+    global _DF
+    _DF = _prepare_dataframe(df)
 
 
 def get_dataframe() -> pd.DataFrame:
     """Return the cached raw DataFrame (for reference / display purposes)."""
     return _DF.copy()
+
+
+def _role_for_column(df: pd.DataFrame, col: str) -> str:
+    series = df[col]
+    if col in _TIME_COLUMNS or pd.api.types.is_datetime64_any_dtype(series):
+        return "date/time"
+    if pd.api.types.is_numeric_dtype(series):
+        return "numeric"
+    if series.nunique(dropna=True) <= 50:
+        return "categorical"
+    return "text"
+
+
+def get_dataset_profile(df: pd.DataFrame | None = None) -> dict:
+    """Return a compact, UI/LLM-friendly profile of the active dataset."""
+    source = _DF if df is None else df
+    rows = len(source)
+    columns = []
+
+    for col in source.columns:
+        series = source[col]
+        role = _role_for_column(source, col)
+        non_null = series.dropna()
+        samples = [str(v) for v in non_null.unique()[:5]]
+        columns.append({
+            "name": col,
+            "dtype": str(series.dtype),
+            "role": role,
+            "unique": int(series.nunique(dropna=True)),
+            "missing": int(series.isna().sum()),
+            "missing_pct": round(float(series.isna().mean() * 100), 1) if rows else 0,
+            "samples": samples,
+        })
+
+    return {
+        "rows": rows,
+        "column_count": len(source.columns),
+        "columns": columns,
+        "numeric_columns": [c["name"] for c in columns if c["role"] == "numeric"],
+        "categorical_columns": [c["name"] for c in columns if c["role"] == "categorical"],
+        "date_columns": [c["name"] for c in columns if c["role"] == "date/time"],
+        "text_columns": [c["name"] for c in columns if c["role"] == "text"],
+    }
+
+
+def _pick_metric(profile: dict) -> str | None:
+    numeric = profile["numeric_columns"]
+    if not numeric:
+        return ROW_COUNT_METRIC
+
+    preferred_tokens = (
+        "revenue", "sales", "amount", "total", "profit", "price", "cost",
+        "quantity", "qty", "units", "score", "rating", "value",
+    )
+    for token in preferred_tokens:
+        for col in numeric:
+            if token in col.lower():
+                return col
+    return numeric[0]
+
+
+def _pick_category(profile: dict) -> str | None:
+    categoricals = profile["categorical_columns"]
+    if categoricals:
+        return categoricals[0]
+
+    # Some ID-like integer columns are numeric but can still be useful as groups
+    # if they have a small number of distinct values.
+    for col in profile["columns"]:
+        if col["role"] == "numeric" and 2 <= col["unique"] <= 20:
+            return col["name"]
+    return None
+
+
+def build_schema_context() -> str:
+    """Build the current dataset description sent to the LLM parser."""
+    profile = get_dataset_profile()
+    lines = [
+        f"DATASET PROFILE: {profile['rows']} rows, {profile['column_count']} columns.",
+        "Use ONLY the columns listed below. Do not invent fields.",
+        "",
+        "COLUMNS:",
+    ]
+
+    for col in profile["columns"]:
+        sample = ""
+        if col["samples"]:
+            sample = f" Examples: {', '.join(col['samples'][:4])}."
+        lines.append(
+            f"- {col['name']} ({col['role']}, {col['dtype']}, "
+            f"{col['unique']} unique, {col['missing_pct']}% missing).{sample}"
+        )
+
+    metric_hint = ", ".join(profile["numeric_columns"] + [ROW_COUNT_METRIC])
+    dim_hint = ", ".join(
+        profile["categorical_columns"] + profile["date_columns"]
+    ) or "No categorical/date columns found"
+    lines.extend([
+        "",
+        f"Good metric candidates: {metric_hint}.",
+        f"Good dimension/filter candidates: {dim_hint}.",
+        "For trends, prefer month_name/year/quarter when available; otherwise use a date/time column.",
+    ])
+    return "\n".join(lines)
+
+
+def suggest_questions(limit: int = 5) -> list[str]:
+    """Generate deterministic example questions for the active dataset."""
+    profile = get_dataset_profile()
+    metric = _pick_metric(profile)
+    category = _pick_category(profile)
+    date_dim = "month_name" if "month_name" in _DF.columns else (
+        profile["date_columns"][0] if profile["date_columns"] else None
+    )
+
+    questions: list[str] = []
+    if metric and category and metric != ROW_COUNT_METRIC:
+        questions.append(f"Show {metric} by {category}")
+        questions.append(f"Top 5 {category} by {metric}")
+    if metric and date_dim and metric != ROW_COUNT_METRIC:
+        questions.append(f"Show {metric} trend by {date_dim}")
+    if category:
+        questions.append(f"Count records by {category}")
+    if metric and metric != ROW_COUNT_METRIC:
+        questions.append(f"Summarize {metric} performance")
+
+    fallback = [
+        "Show an overview of this dataset",
+        "Which columns have missing values?",
+        "Create a dashboard summary",
+    ]
+    questions.extend(q for q in fallback if q not in questions)
+    return questions[:limit]
+
+
+def build_overview_queries() -> list[dict]:
+    """Build a small dashboard spec from the active dataset profile."""
+    profile = get_dataset_profile()
+    metric = _pick_metric(profile)
+    category = _pick_category(profile)
+    if not metric:
+        return []
+
+    queries: list[dict] = []
+    if category:
+        aggregation = "count" if metric == ROW_COUNT_METRIC else "sum"
+        metric_label = "Record Count" if metric == ROW_COUNT_METRIC else metric.replace("_", " ").title()
+        queries.append({
+            "metric": metric,
+            "aggregation": aggregation,
+            "dimensions": [category],
+            "filters": [],
+            "chart_type": "bar",
+            "sort_by": "metric",
+            "sort_order": "desc",
+            "limit": 12,
+            "title": f"{metric_label} by {category.replace('_', ' ').title()}",
+            "x_label": category.replace("_", " ").title(),
+            "y_label": metric_label,
+        })
+
+    time_dim = None
+    if "month_name" in _DF.columns:
+        time_dim = "month_name"
+    elif "year" in _DF.columns:
+        time_dim = "year"
+    elif profile["date_columns"]:
+        time_dim = profile["date_columns"][0]
+
+    if time_dim:
+        aggregation = "count" if metric == ROW_COUNT_METRIC else "sum"
+        metric_label = "Record Count" if metric == ROW_COUNT_METRIC else metric.replace("_", " ").title()
+        queries.append({
+            "metric": metric,
+            "aggregation": aggregation,
+            "dimensions": [time_dim],
+            "filters": [],
+            "chart_type": "line",
+            "sort_by": time_dim,
+            "sort_order": "asc",
+            "limit": 100,
+            "title": f"{metric_label} Trend",
+            "x_label": time_dim.replace("_", " ").title(),
+            "y_label": metric_label,
+        })
+
+    if category and metric != ROW_COUNT_METRIC:
+        queries.append({
+            "metric": metric,
+            "aggregation": "sum",
+            "dimensions": [category],
+            "filters": [],
+            "chart_type": "pie",
+            "sort_by": "metric",
+            "sort_order": "desc",
+            "limit": 8,
+            "title": f"{metric.replace('_', ' ').title()} Share by {category.replace('_', ' ').title()}",
+            "x_label": category.replace("_", " ").title(),
+            "y_label": metric.replace("_", " ").title(),
+        })
+
+    return queries[:3]
 
 
 def run_query(parsed: dict) -> dict:

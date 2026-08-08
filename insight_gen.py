@@ -71,5 +71,7 @@ def generate_insight(user_query: str, result: dict) -> str:
         summary = result.get("summary", {})
         max_label = summary.get("max_label", "N/A")
         max_value = summary.get("max_value", 0)
-        metric = result.get("metric", "value").replace("_", " ")
-        return f"Top performer: {max_label} with ${max_value:,.0f} in {metric}."
+        raw_metric = result.get("metric", "value")
+        metric = raw_metric.replace("_", " ")
+        prefix = "$" if any(token in raw_metric for token in ("revenue", "price", "cost", "amount")) else ""
+        return f"Top performer: {max_label} with {prefix}{max_value:,.0f} in {metric}."

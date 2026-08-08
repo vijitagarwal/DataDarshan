@@ -1,113 +1,55 @@
 # -*- coding: utf-8 -*-
-import os
+from __future__ import annotations
+
 import json
+import os
 import re
 
-from groq import Groq
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
-SYSTEM_PROMPT = """You are a BI query parser. Return ONLY a raw JSON object — no markdown, no code fences, no prose.
 
-DATASET COLUMNS:
-  order_date (2022–2023 dates)
-  product_category: Beauty | Books | Electronics | Fashion | Home & Kitchen | Sports
-  customer_region: Asia | Europe | Middle East | North America
-  payment_method: Cash on Delivery | Credit Card | Debit Card | UPI | Wallet
-  price, discount_percent, quantity_sold, rating, review_count, discounted_price, total_revenue
-  year (2022 or 2023), month (1–12), quarter (1–4), month_name (Jan–Dec labels)
+BASE_SYSTEM_PROMPT = """You are a BI query parser for a live CSV dataset.
+Return ONLY a raw JSON object. No markdown, no code fences, no prose.
+
+{schema_context}
 
 OUTPUT SCHEMA (all fields required):
-{"metric":"total_revenue","aggregation":"sum","dimensions":["customer_region"],"filters":[],"chart_type":"bar","sort_by":"metric","sort_order":"desc","limit":100,"title":"...","x_label":"...","y_label":"..."}
+{{"metric":"<numeric_column>","aggregation":"sum|mean|count|max|min","dimensions":["<column>"],"filters":[],"chart_type":"bar|line|pie|scatter|heatmap","sort_by":"metric|<column>","sort_order":"asc|desc","limit":100,"title":"...","x_label":"...","y_label":"..."}}
 
-═══ METRIC RULES ═══
-"revenue" / "sales" / "income"          → metric:"total_revenue",    aggregation:"sum"
-"quantity" / "units sold" / "units"     → metric:"quantity_sold",     aggregation:"sum"
-"rating" / "rated" / "average rating"  → metric:"rating",            aggregation:"mean"
-"discount" / "discount percent"         → metric:"discount_percent",  aggregation:"mean"
-"price"                                 → metric:"price",             aggregation:"mean"
-"count" / "number of orders" / "orders"→ metric:"total_revenue",     aggregation:"count"
+RULES:
+- Use ONLY columns listed in the dataset profile.
+- The metric must be a numeric column from the profile, or "__row_count" for record counts.
+- Use aggregation:"sum" for totals, revenue, sales, amount, quantity, value, cost, or profit.
+- Use aggregation:"mean" for average, rating, score, price, percent, or rate.
+- Use metric:"__row_count" and aggregation:"count" when the user asks for number of records/orders/items.
+- Use categorical/date columns as dimensions and filters.
+- For filters, use exact sample values when shown in the profile.
+- For top N, set limit:N and sort_order:"desc"; for bottom/lowest N, set sort_order:"asc".
+- If the query asks for a trend/over time/monthly/yearly view, use a date/time dimension and chart_type:"line".
+- If there is one categorical dimension, default to chart_type:"bar"; use "pie" only for share/distribution questions with few categories.
+- If there are two dimensions with time first, use chart_type:"line"; otherwise use chart_type:"heatmap" for matrix-style comparisons.
+- Sort month_name chronologically with sort_by:"month_name", sort_order:"asc".
+- Sort year/month/quarter/date dimensions ascending unless the user asks otherwise.
+- If the query is unclear, choose the best metric and dimension from the profile and make a useful chart.
+- If the user asks for a field that is not listed, return {{"error":true,"message":"Field not available in this dataset. Try one of the visible columns."}}
+"""
 
-═══ DIMENSION + CHART TYPE RULES ═══
-"trend" / "over time" / "monthly" / "month by month"
-  → dimensions:["month_name"], chart_type:"line", sort_by:"month_name", sort_order:"asc"
 
-"yearly" / "annual" / "by year" / "year over year"
-  → dimensions:["year"], chart_type:"line", sort_by:"year", sort_order:"asc"
+def _build_system_prompt(schema_context: str | None = None) -> str:
+    if not schema_context:
+        try:
+            from data_engine import build_schema_context
 
-"by region" / "per region" / "regional" / "across regions"
-  → dimensions:["customer_region"], chart_type:"bar"
-
-"by category" / "per category" / "by product" / "product-wise"
-  → dimensions:["product_category"], chart_type:"bar"
-
-"by payment" / "payment method" / "payment-wise"
-  → dimensions:["payment_method"], chart_type:"bar"
-
-"compare" / "breakdown" / "X vs Y" or any query needing two groupings
-  → dimensions:["month_name", <second_dim>], chart_type:"line", sort_by:"month_name", sort_order:"asc"
-  Example: "compare revenue by category monthly" → dimensions:["month_name","product_category"]
-  Example: "revenue breakdown by region over time" → dimensions:["month_name","customer_region"]
-
-CHART TYPE summary:
-  month_name or year in dimensions         → chart_type:"line"
-  single categorical dimension             → chart_type:"bar"
-  two dimensions                           → chart_type:"line"
-
-═══ TOP-N RULES ═══
-"top 5"       → limit:5,  sort_order:"desc"
-"top 10"      → limit:10, sort_order:"desc"
-"top N"       → limit:N,  sort_order:"desc"
-"bottom N" / "lowest N" → limit:N, sort_order:"asc"
-No top-N mentioned → limit:100
-
-═══ FILTER RULES ═══
-Quarter filters (value must be an integer, NOT a string):
-  "Q1" / "first quarter" / "quarter 1"   → {"field":"quarter","op":"eq","value":1}
-  "Q2" / "second quarter" / "quarter 2"  → {"field":"quarter","op":"eq","value":2}
-  "Q3" / "third quarter" / "quarter 3"   → {"field":"quarter","op":"eq","value":3}
-  "Q4" / "fourth quarter" / "last quarter" / "quarter 4" → {"field":"quarter","op":"eq","value":4}
-
-Year filters (value must be an integer, NOT a string):
-  "2022" → {"field":"year","op":"eq","value":2022}
-  "2023" → {"field":"year","op":"eq","value":2023}
-
-Month filters (value must be the month NUMBER as an integer):
-  "january" / "jan"  → {"field":"month","op":"eq","value":1}
-  "february" / "feb" → {"field":"month","op":"eq","value":2}
-  "march" / "mar"    → {"field":"month","op":"eq","value":3}
-  "april" / "apr"    → {"field":"month","op":"eq","value":4}
-  "may"              → {"field":"month","op":"eq","value":5}
-  "june" / "jun"     → {"field":"month","op":"eq","value":6}
-  "july" / "jul"     → {"field":"month","op":"eq","value":7}
-  "august" / "aug"   → {"field":"month","op":"eq","value":8}
-  "september" / "sep"→ {"field":"month","op":"eq","value":9}
-  "october" / "oct"  → {"field":"month","op":"eq","value":10}
-  "november" / "nov" → {"field":"month","op":"eq","value":11}
-  "december" / "dec" → {"field":"month","op":"eq","value":12}
-
-Category filters (exact capitalisation required):
-  "electronics"       → {"field":"product_category","op":"eq","value":"Electronics"}
-  "fashion"           → {"field":"product_category","op":"eq","value":"Fashion"}
-  "beauty"            → {"field":"product_category","op":"eq","value":"Beauty"}
-  "books"             → {"field":"product_category","op":"eq","value":"Books"}
-  "home" / "kitchen"  → {"field":"product_category","op":"eq","value":"Home & Kitchen"}
-  "sports"            → {"field":"product_category","op":"eq","value":"Sports"}
-
-Region filters (exact capitalisation required):
-  "asia"          → {"field":"customer_region","op":"eq","value":"Asia"}
-  "europe"        → {"field":"customer_region","op":"eq","value":"Europe"}
-  "north america" → {"field":"customer_region","op":"eq","value":"North America"}
-  "middle east"   → {"field":"customer_region","op":"eq","value":"Middle East"}
-
-═══ SORT RULES ═══
-  month_name in dimensions → sort_by:"month_name", sort_order:"asc"
-  year in dimensions       → sort_by:"year",       sort_order:"asc"
-  otherwise                → sort_by:"metric",     sort_order:"desc"
-
-DEFAULTS (when intent is unclear): metric:"total_revenue", aggregation:"sum", chart_type:"bar", limit:100
-ERROR (unknown column): {"error":true,"message":"Field not available. Valid columns: order_date, product_category, customer_region, payment_method, price, discount_percent, quantity_sold, rating, review_count, discounted_price, total_revenue, year, month, quarter, month_name"}"""
+            schema_context = build_schema_context()
+        except Exception:
+            schema_context = (
+                "No dataset profile was available. Use only columns the user "
+                "explicitly names."
+            )
+    return BASE_SYSTEM_PROMPT.format(schema_context=schema_context)
 
 
 def _extract_json(text: str) -> dict:
@@ -137,11 +79,9 @@ def is_chitchat(query: str) -> bool:
     if q in chitchat_exact:
         return True
 
-    # Too short to be a data query (under 3 words)
     if len(q.split()) < 3:
         return True
 
-    # Must contain at least one data-related keyword
     data_keywords = [
         "show", "tell", "what", "how", "revenue", "sales", "trend",
         "compare", "top", "best", "worst", "average", "total", "count",
@@ -150,36 +90,38 @@ def is_chitchat(query: str) -> bool:
         "analyze", "analysis", "dashboard", "report", "filter", "by",
         "insights", "insight", "generate", "whole", "full", "all",
         "give", "about", "data", "overview", "summary", "performance",
+        "distribution", "share", "records", "rows", "columns",
     ]
-    if not any(kw in q for kw in data_keywords):
-        return True
-
-    return False
+    return not any(kw in q for kw in data_keywords)
 
 
-def parse_query(user_query: str, previous_context: dict = None) -> dict:
+def parse_query(
+    user_query: str,
+    previous_context: dict | None = None,
+    schema_context: str | None = None,
+) -> dict:
     if not user_query or not user_query.strip():
         return {
             "error": True,
-            "message": "Query is empty. Please ask a question about the sales data.",
+            "message": "Query is empty. Please ask a question about the dataset.",
         }
 
     if is_chitchat(user_query):
         return {
             "error": True,
             "message": (
-                "👋 That doesn't look like a data question! Try asking something like:\n"
-                "- 'Show total revenue by region'\n"
-                "- 'Monthly sales trend for 2023'\n"
-                "- 'Top product categories by average rating'"
+                "That does not look like a data question. Try asking things like "
+                "'show sales by region', 'monthly trend', or 'top categories'."
             ),
         }
 
     try:
         import streamlit as st
+
         api_key = st.secrets["GROQ_API_KEY"]
-    except:
+    except Exception:
         api_key = os.getenv("GROQ_API_KEY")
+
     client = Groq(api_key=api_key)
 
     context_block = ""
@@ -190,16 +132,17 @@ def parse_query(user_query: str, previous_context: dict = None) -> dict:
         context_block = (
             f"\n\nConversation context: user previously asked \"{prev_title}\". "
             f"Previous metric: {prev_metric}. Previous dimensions: {prev_dims or 'none'}. "
-            f"Reuse filters/dimensions when the new query is ambiguous."
+            "Reuse filters/dimensions when the new query is ambiguous."
         )
 
     user_content = user_query.strip() + context_block
+    system_prompt = _build_system_prompt(schema_context)
 
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
             temperature=0.1,
@@ -211,14 +154,14 @@ def parse_query(user_query: str, previous_context: dict = None) -> dict:
             parsed = _extract_json(raw)
         except (json.JSONDecodeError, ValueError):
             retry_messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
                 {"role": "assistant", "content": raw},
                 {
                     "role": "user",
                     "content": (
-                        "⚠ RETRY: Output ONLY a raw JSON object starting with { and ending with }. "
-                        "No markdown, no prose, no code fences."
+                        "RETRY: Output ONLY a raw JSON object starting with { "
+                        "and ending with }. No markdown, no prose."
                     ),
                 },
             ]
@@ -251,61 +194,21 @@ def parse_query(user_query: str, previous_context: dict = None) -> dict:
     return parsed
 
 
-# ---------------------------------------------------------------------------
-# Dashboard mode — hardcoded 3-chart overview, no LLM call needed
-# ---------------------------------------------------------------------------
-
 _DASHBOARD_TRIGGERS = frozenset(["dashboard", "overview", "summary", "report"])
-
-_DASHBOARD_QUERIES: list[dict] = [
-    {
-        "metric":      "total_revenue",
-        "aggregation": "sum",
-        "dimensions":  ["customer_region"],
-        "filters":     [],
-        "chart_type":  "bar",
-        "sort_by":     "metric",
-        "sort_order":  "desc",
-        "limit":       100,
-        "title":       "Revenue by Region",
-        "x_label":     "Region",
-        "y_label":     "Total Revenue ($)",
-    },
-    {
-        "metric":      "total_revenue",
-        "aggregation": "sum",
-        "dimensions":  ["month_name"],
-        "filters":     [],
-        "chart_type":  "line",
-        "sort_by":     "month_name",
-        "sort_order":  "asc",
-        "limit":       100,
-        "title":       "Monthly Revenue Trend (All Time)",
-        "x_label":     "Month",
-        "y_label":     "Total Revenue ($)",
-    },
-    {
-        "metric":      "total_revenue",
-        "aggregation": "sum",
-        "dimensions":  ["product_category"],
-        "filters":     [],
-        "chart_type":  "pie",
-        "sort_by":     "metric",
-        "sort_order":  "desc",
-        "limit":       100,
-        "title":       "Revenue Share by Product Category",
-        "x_label":     "Category",
-        "y_label":     "Total Revenue ($)",
-    },
-]
 
 
 def parse_dashboard_query(user_query: str) -> list[dict] | None:
-    """
-    Return the fixed 3-chart dashboard spec if the query contains a
-    dashboard/overview trigger word, otherwise return None.
-    """
+    """Return a data-driven overview spec when dashboard intent is present."""
     query_lower = user_query.lower()
     words = set(query_lower.split())
     triggered = bool(words & _DASHBOARD_TRIGGERS) or "full report" in query_lower
-    return list(_DASHBOARD_QUERIES) if triggered else None
+    if not triggered:
+        return None
+
+    try:
+        from data_engine import build_overview_queries
+
+        queries = build_overview_queries()
+        return queries or None
+    except Exception:
+        return None

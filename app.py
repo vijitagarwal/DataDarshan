@@ -13,7 +13,7 @@ from llm_parser import parse_query, parse_dashboard_query
 
 # ---------------------------------------------------------------------------
 # Page config — must be the very first Streamlit call
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------/----------------------
 
 st.set_page_config(
     page_title="dataदर्शनम्",
@@ -39,7 +39,7 @@ if "query_count" not in st.session_state:
 
 # Re-apply custom CSV patch on every rerun
 if st.session_state.custom_df is not None:
-    data_engine._DF = st.session_state.custom_df
+    data_engine.set_dataframe(st.session_state.custom_df)
 
 # ---------------------------------------------------------------------------
 # Theme logic
@@ -457,7 +457,7 @@ with ctrl2:
             df_up = pd.read_csv(io.StringIO(raw))
             df_up = data_engine.prepare_dataframe(df_up)
             st.session_state.custom_df = df_up
-            data_engine._DF = df_up
+            data_engine.set_dataframe(df_up)
             st.success(f"✓ Loaded {len(df_up):,} rows")
         except Exception as exc:
             st.error(f"Could not read file: {exc}")
@@ -484,22 +484,41 @@ with ctrl3:
 st.divider()
 
 # ---------------------------------------------------------------------------
+# Active dataset profile
+# ---------------------------------------------------------------------------
+
+profile = data_engine.get_dataset_profile()
+metric_cols = profile.get("numeric_columns", [])[:4]
+dimension_cols = (
+    profile.get("categorical_columns", []) + profile.get("date_columns", [])
+)[:4]
+st.markdown(
+    f"""
+    <div class="summary-card" style="margin-bottom:1rem;">
+      <div class="summary-header">Active Dataset</div>
+      <div style="color:{text_main}; font-size:14px; font-weight:600;">
+        {profile['rows']:,} rows / {profile['column_count']} columns
+      </div>
+      <div style="color:{text_muted}; font-size:12px; margin-top:0.45rem;">
+        Metrics: {", ".join(metric_cols) if metric_cols else "none detected"}<br>
+        Dimensions: {", ".join(dimension_cols) if dimension_cols else "none detected"}
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------------------
 # Inline Controls - ROW 2: Example Queries
 # ---------------------------------------------------------------------------
 
 st.markdown(f"<div style='font-size:12px; font-weight:600; color:{text_muted}; letter-spacing:1px; margin-bottom:8px;'>✨ TRY THESE EXAMPLES</div>", unsafe_allow_html=True)
 
-ex1, ex2, ex3, ex4, ex5 = st.columns(5)
-examples = {
-    ex1: "Revenue by region",
-    ex2: "Monthly trend for 2023",
-    ex3: "Top categories by rating",
-    ex4: "Payment method breakdown",
-    ex5: "Q3 2023 performance",
-}
-for col, example in examples.items():
+examples = data_engine.suggest_questions(5)
+example_cols = st.columns(len(examples))
+for idx, (col, example) in enumerate(zip(example_cols, examples)):
     with col:
-        if st.button(example, use_container_width=True, key=f"example_{example}"):
+        if st.button(example, use_container_width=True, key=f"example_{idx}_{example}"):
             st.session_state.pending_query = example
             st.rerun()
 
@@ -569,7 +588,7 @@ def _render_dashboard_entry(entry: dict) -> None:
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="dashboard-section-header">📊 Sales Overview Dashboard</div>',
+        '<div class="dashboard-section-header">📊 Dataset Overview Dashboard</div>',
         unsafe_allow_html=True,
     )
 
@@ -678,7 +697,11 @@ def _run_pipeline(query: str) -> None:
             previous_context = last["result"]
 
     with st.spinner("🧠 Analyzing your query…"):
-        parsed = parse_query(query, previous_context=previous_context)
+        parsed = parse_query(
+            query,
+            previous_context=previous_context,
+            schema_context=data_engine.build_schema_context(),
+        )
 
         if parsed.get("error"):
             entry = {
