@@ -106,7 +106,14 @@ def _bar(df: pd.DataFrame, x: str, y: str, result: dict) -> go.Figure:
                     if hasattr(trace, 'x')
                     and trace.x is not None else [])]
         max_val = max(all_vals) if all_vals else 1
-        fmt = '%{x:.3f}' if max_val < 100 else '%{x:.2s}'
+        if max_val >= 1_000_000:
+            fmt = '%{x:.2s}'
+        elif max_val >= 1_000:
+            fmt = '%{x:,.0f}'
+        elif max_val < 10:
+            fmt = '%{x:.2f}'
+        else:
+            fmt = '%{x:.1f}'
         fig.update_traces(
             hovertemplate=_hover_fmt_h(y),
             marker_line_width=0,
@@ -141,7 +148,14 @@ def _bar(df: pd.DataFrame, x: str, y: str, result: dict) -> go.Figure:
                     if hasattr(trace, 'y')
                     and trace.y is not None else [])]
         max_val = max(all_vals) if all_vals else 1
-        fmt = '%{y:.3f}' if max_val < 100 else '%{y:.2s}'
+        if max_val >= 1_000_000:
+            fmt = '%{y:.2s}'
+        elif max_val >= 1_000:
+            fmt = '%{y:,.0f}'
+        elif max_val < 10:
+            fmt = '%{y:.2f}'
+        else:
+            fmt = '%{y:.1f}'
         fig.update_traces(
             hovertemplate=_hover_fmt(y),
             marker_line_width=0,
@@ -346,10 +360,11 @@ def _apply_light_theme(fig: go.Figure) -> None:
     )
     # Fix text labels on bars / lines
     fig.update_traces(textfont_color=lf)
-    # Fix line-chart marker borders
+    # Fix pie chart labels and border for light theme
     fig.update_traces(
+        textfont=dict(color=lf),
         marker=dict(line=dict(color="#F8FAFC")),
-        selector=dict(type="scatter"),
+        selector=dict(type="pie"),
     )
 
 
@@ -403,8 +418,12 @@ def build_chart(result: dict, is_dark: bool = True) -> go.Figure:
         fig = _pie(df, x_dim, metric, result)
 
     elif chart_type == "scatter":
-        x_col = dimensions[1] if len(dimensions) > 1 else x_dim
-        fig   = _scatter(df, x_col, metric, result)
+        if len(dimensions) > 1:
+            x_col = dimensions[1]
+            fig   = _scatter(df, x_col, metric, result)
+        else:
+            # Not enough numeric dimensions for scatter — fall back to bar
+            fig = _bar(df, x_dim, metric, result)
 
     elif chart_type == "heatmap":
         fig = _heatmap(df, result)

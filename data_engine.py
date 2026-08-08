@@ -206,7 +206,7 @@ def _sort_result(
         df["_month_order"] = df["month_name"].map(
             {m: i for i, m in enumerate(_MONTH_ORDER)}
         )
-        df = df.sort_values("_month_order", ascending=True).drop(
+        df = df.sort_values("_month_order", ascending=ascending).drop(
             columns=["_month_order"]
         )
         return df
@@ -387,14 +387,14 @@ def suggest_questions(limit: int = 5) -> list[str]:
 
     questions: list[str] = []
     if metric and category and metric != ROW_COUNT_METRIC:
-        questions.append(f"Show {metric} by {category}")
-        questions.append(f"Top 5 {category} by {metric}")
+        questions.append(f"Show {metric.replace('_', ' ')} by {category.replace('_', ' ')}")
+        questions.append(f"Top 5 {category.replace('_', ' ')} by {metric.replace('_', ' ')}")
     if metric and date_dim and metric != ROW_COUNT_METRIC:
-        questions.append(f"Show {metric} trend by {date_dim}")
+        questions.append(f"Show {metric.replace('_', ' ')} trend by {date_dim.replace('_', ' ')}")
     if category:
-        questions.append(f"Count records by {category}")
+        questions.append(f"Count records by {category.replace('_', ' ')}")
     if metric and metric != ROW_COUNT_METRIC:
-        questions.append(f"Summarize {metric} performance")
+        questions.append(f"Summarize {metric.replace('_', ' ')} performance")
 
     fallback = [
         "Show an overview of this dataset",

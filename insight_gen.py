@@ -46,7 +46,7 @@ def generate_insight(user_query: str, result: dict) -> str:
     try:
         import streamlit as st
         api_key = st.secrets["GROQ_API_KEY"]
-    except:
+    except Exception:
         api_key = os.getenv("GROQ_API_KEY")
     client = Groq(api_key=api_key)
 

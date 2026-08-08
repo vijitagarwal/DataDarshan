@@ -34,8 +34,6 @@ if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
 if "custom_df" not in st.session_state:
     st.session_state.custom_df = None
-if "query_count" not in st.session_state:
-    st.session_state.query_count = 0
 
 # Re-apply custom CSV patch on every rerun
 if st.session_state.custom_df is not None:
@@ -347,13 +345,15 @@ _REVENUE_METRICS = {"total_revenue", "discounted_price", "price"}
 
 
 def _fmt_number(val: float, metric: str = "") -> str:
-    prefix = "$" if metric in _REVENUE_METRICS or "revenue" in metric or "price" in metric else ""
+    is_currency = metric in _REVENUE_METRICS or "revenue" in metric or "price" in metric
+    prefix = "$" if is_currency else ""
+    sign = "-" if val < 0 else ""
     abs_val = abs(val)
     if abs_val >= 1_000_000:
-        return f"{prefix}{val / 1_000_000:.2f}M"
+        return f"{sign}{prefix}{abs_val / 1_000_000:.2f}M"
     if abs_val >= 1_000:
-        return f"{prefix}{val / 1_000:.1f}K"
-    return f"{prefix}{val:,.2f}"
+        return f"{sign}{prefix}{abs_val / 1_000:.1f}K"
+    return f"{sign}{prefix}{abs_val:,.2f}"
 
 
 def _kpi_card(label: str, value: str, subtitle: str = "") -> str:
@@ -478,7 +478,6 @@ with ctrl3:
     with bcol2:
         if st.button("🗑️ Clear", use_container_width=True, key="clear_chat"):
             st.session_state.chat_history = []
-            st.session_state.query_count = 0
             st.rerun()
 
 st.divider()
@@ -530,7 +529,7 @@ st.markdown("<div style='margin-bottom:24px;'></div>", unsafe_allow_html=True)
 # Render functions
 # ---------------------------------------------------------------------------
 
-def _render_mini_chart(chart: dict, index: int = 0) -> None:
+def _render_mini_chart(chart: dict, index: int = 0, entry_index: int = 0) -> None:
     """Compact chart card used inside the 3-chart dashboard grid."""
     result = chart["result"]
     fig    = chart["fig"]
@@ -562,10 +561,11 @@ def _render_mini_chart(chart: dict, index: int = 0) -> None:
         )
 
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+    _live_fig = build_chart(chart["result"], is_dark=(st.session_state.theme == "dark"))
     st.plotly_chart(
-        fig,
+        _live_fig,
         use_container_width=True,
-        key=f"dash_chart_{index}",
+        key=f"dash_chart_{entry_index}_{index}",
         config={
             'displayModeBar': True,
             'displaylogo': False,
@@ -578,7 +578,7 @@ def _render_mini_chart(chart: dict, index: int = 0) -> None:
     st.markdown('</div>', unsafe_allow_html=True)
 
 
-def _render_dashboard_entry(entry: dict) -> None:
+def _render_dashboard_entry(entry: dict, entry_index: int = 0) -> None:
     """Render the 3-chart dashboard grid from a dashboard pipeline entry."""
     query  = entry["query"]
     charts = entry["charts"]
@@ -595,17 +595,17 @@ def _render_dashboard_entry(entry: dict) -> None:
     if len(charts) >= 2:
         col_a, col_b = st.columns(2, gap="medium")
         with col_a:
-            _render_mini_chart(charts[0], index=0)
+            _render_mini_chart(charts[0], index=0, entry_index=entry_index)
         with col_b:
-            _render_mini_chart(charts[1], index=1)
+            _render_mini_chart(charts[1], index=1, entry_index=entry_index)
 
     if len(charts) >= 3:
-        _render_mini_chart(charts[2], index=2)
+        _render_mini_chart(charts[2], index=2, entry_index=entry_index)
 
     st.markdown('<hr class="chat-divider">', unsafe_allow_html=True)
 
 
-def _render_entry(entry: dict) -> None:
+def _render_entry(entry: dict, entry_index: int = 0) -> None:
     query   = entry["query"]
     result  = entry["result"]
     fig     = entry["fig"]
@@ -645,11 +645,12 @@ def _render_entry(entry: dict) -> None:
     col_chart, col_right = st.columns([7, 3], gap="medium")
 
     with col_chart:
+        _live_fig = build_chart(entry["result"], is_dark=(st.session_state.theme == "dark"))
         st.markdown('<div class="chart-card">', unsafe_allow_html=True)
         st.plotly_chart(
-        fig,
+        _live_fig,
         use_container_width=True,
-        key=f"chart_{hash(str(result.get('title','')))}",
+        key=f"chart_{entry_index}",
         config={
             'displayModeBar': True,
             'displaylogo': False,
@@ -693,7 +694,12 @@ def _run_pipeline(query: str) -> None:
     previous_context = None
     if st.session_state.chat_history:
         last = st.session_state.chat_history[-1]
-        if last.get("result") and not last["result"].get("error"):
+        if last.get("type") == "dashboard":
+            for chart in last.get("charts", []):
+                if chart.get("result") and not chart["result"].get("error"):
+                    previous_context = chart["result"]
+                    break
+        elif last.get("result") and not last["result"].get("error"):
             previous_context = last["result"]
 
     with st.spinner("🧠 Analyzing your query…"):
@@ -708,11 +714,11 @@ def _run_pipeline(query: str) -> None:
                 "query":   query,
                 "parsed":  parsed,
                 "result":  parsed,
-                "fig":     build_chart(parsed, is_dark=_is_dark),
+                "fig":     None,
                 "insight": parsed.get("message", ""),
             }
             st.session_state.chat_history.append(entry)
-            _render_entry(entry)
+            _render_entry(entry, entry_index=len(st.session_state.chat_history) - 1)
             return
 
         st.toast("✅ Query parsed successfully")
@@ -730,9 +736,7 @@ def _run_pipeline(query: str) -> None:
         "insight": insight,
     }
     st.session_state.chat_history.append(entry)
-    if not result.get("error"):
-        st.session_state.query_count += 1
-    _render_entry(entry)
+    _render_entry(entry, entry_index=len(st.session_state.chat_history) - 1)
 
 
 def _run_dashboard_pipeline(query: str) -> None:
@@ -745,22 +749,22 @@ def _run_dashboard_pipeline(query: str) -> None:
             fig    = build_chart(result, is_dark=_is_dark)
             charts.append({"parsed": p, "result": result, "fig": fig})
 
+    if not charts:
+        st.error("Could not generate a dashboard for this dataset. Make sure the dataset has numeric and categorical columns.")
+        return
     entry = {"type": "dashboard", "query": query, "charts": charts}
     st.session_state.chat_history.append(entry)
-    st.session_state.query_count += sum(
-        1 for c in charts if not c["result"].get("error")
-    )
-    _render_dashboard_entry(entry)
+    _render_dashboard_entry(entry, entry_index=len(st.session_state.chat_history) - 1)
 
 # ---------------------------------------------------------------------------
 # Render chat history
 # ---------------------------------------------------------------------------
 
-for entry in st.session_state.chat_history:
+for _ei, entry in enumerate(st.session_state.chat_history):
     if entry.get("type") == "dashboard":
-        _render_dashboard_entry(entry)
+        _render_dashboard_entry(entry, entry_index=_ei)
     else:
-        _render_entry(entry)
+        _render_entry(entry, entry_index=_ei)
 
 # ---------------------------------------------------------------------------
 # Chat input
