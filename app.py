@@ -34,6 +34,10 @@ if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
 if "custom_df" not in st.session_state:
     st.session_state.custom_df = None
+if "saved_charts" not in st.session_state:
+    st.session_state.saved_charts = []          # Tier-2.1 pinned charts
+if "show_sidebar" not in st.session_state:
+    st.session_state.show_sidebar = False       # sidebar toggle state
 
 # Re-apply custom CSV patch on every rerun
 if st.session_state.custom_df is not None:
@@ -79,12 +83,9 @@ html, body, [class*="css"] {{ font-family: 'Inter', 'Segoe UI', sans-serif; }}
     color: {text_main_} !important;
 }}
 
-/* Hide sidebar completely */
-section[data-testid="stSidebar"] {{
-    display: none !important;
-}}
+/* Sidebar collapse button styling */
 [data-testid="collapsedControl"] {{
-    display: none !important;
+    color: {text_main_} !important;
 }}
 
 /* Hide streamlit branding */
@@ -332,10 +333,374 @@ header {{ visibility: hidden; }}
     border-radius: 10px;
     padding: 0.4rem;
 }}
+
+/* ── Hero Section ──────────────────────────────────────────────── */
+.hero-section {{
+    text-align: center;
+    padding: 3.5rem 1rem 2.5rem;
+    animation: fadeUp 0.6s ease both;
+}}
+@keyframes fadeUp {{
+    from {{ opacity:0; transform:translateY(20px); }}
+    to   {{ opacity:1; transform:translateY(0); }}
+}}
+.hero-title {{
+    font-size: 3.2rem;
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+    margin-bottom: 0.7rem;
+}}
+.hero-subtitle {{
+    font-size: 1.1rem;
+    color: {text_muted_};
+    margin-bottom: 2rem;
+    font-weight: 400;
+    max-width: 580px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.6;
+}}
+.hero-tag {{
+    display: inline-block;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.3);
+    color: #A5B4FC;
+    border-radius: 20px;
+    padding: 0.3rem 0.85rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin: 0.15rem;
+    text-transform: uppercase;
+}}
+.hero-feature-grid {{
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 2rem;
+    margin-bottom: 0;
+}}
+.hero-feature-card {{
+    background: {bg_card_};
+    border: 1px solid {border_col_};
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem;
+    text-align: left;
+    min-width: 170px;
+    max-width: 210px;
+    transition: border-color 0.2s, transform 0.2s;
+}}
+.hero-feature-card:hover {{
+    border-color: {accent_};
+    transform: translateY(-3px);
+}}
+.hero-feature-icon {{
+    font-size: 1.6rem;
+    margin-bottom: 0.5rem;
+}}
+.hero-feature-title {{
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: {text_main_};
+    margin-bottom: 0.25rem;
+}}
+.hero-feature-desc {{
+    font-size: 0.73rem;
+    color: {text_muted_};
+    line-height: 1.5;
+}}
+
+/* ── Sidebar (Saved + Dataset) ─────────────────────────────────── */
+section[data-testid="stSidebar"] {{
+    display: flex !important;
+    background: {bg_sidebar_} !important;
+    border-right: 1px solid {border_col_} !important;
+}}
+.sidebar-section-title {{
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: {text_muted_};
+    font-weight: 700;
+    margin-bottom: 0.7rem;
+    margin-top: 0.3rem;
+}}
+.saved-chip {{
+    background: {bg_card_};
+    border: 1px solid {border_col_};
+    border-radius: 10px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: {text_main_};
+    cursor: pointer;
+    transition: border-color 0.15s;
+}}
+.saved-chip:hover {{ border-color: {accent_}; }}
+
+/* ── Chart type switcher pills ─────────────────────────────────── */
+.chart-type-bar {{
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+}}
+.chart-pill {{
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.2);
+    color: #A5B4FC;
+    border-radius: 20px;
+    padding: 0.22rem 0.7rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+}}
+.chart-pill:hover, .chart-pill.active {{
+    background: {accent_};
+    border-color: {accent_};
+    color: #fff;
+}}
+
+/* ── Follow-up badge ───────────────────────────────────────────── */
+.followup-badge {{
+    display: inline-block;
+    background: rgba(16,185,129,0.12);
+    border: 1px solid rgba(16,185,129,0.3);
+    color: #10B981;
+    border-radius: 20px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-left: 0.5rem;
+    vertical-align: middle;
+}}
+.ai-badge {{
+    display: inline-block;
+    background: rgba(99,102,241,0.12);
+    border: 1px solid rgba(99,102,241,0.3);
+    color: #A5B4FC;
+    border-radius: 20px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}}
+.est-badge {{
+    display: inline-block;
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.3);
+    color: #F59E0B;
+    border-radius: 20px;
+    padding: 0.15rem 0.55rem;
+    font-size: 0.67rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+}}
+
+/* ── Active filters pill row ───────────────────────────────────── */
+.filter-row {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+}}
+.filter-chip {{
+    background: rgba(236,72,153,0.08);
+    border: 1px solid rgba(236,72,153,0.2);
+    color: #F472B6;
+    border-radius: 20px;
+    padding: 0.18rem 0.6rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+}}
+
+/* ── How it works steps ────────────────────────────────────────── */
+.pipeline-step {{
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
+}}
+.pipeline-num {{
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 800;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+}}
+.pipeline-step-body {{ flex: 1; }}
+.pipeline-step-title {{
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: {text_main_};
+    margin-bottom: 0.1rem;
+}}
+.pipeline-step-desc {{
+    font-size: 0.73rem;
+    color: {text_muted_};
+    line-height: 1.5;
+}}
+
+/* ── Download / export buttons ─────────────────────────────────── */
+.stDownloadButton > button {{
+    background: rgba(16,185,129,0.1) !important;
+    border: 1px solid rgba(16,185,129,0.3) !important;
+    color: #10B981 !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    padding: 5px 10px !important;
+    font-weight: 600 !important;
+    transition: all 0.15s !important;
+}}
+.stDownloadButton > button:hover {{
+    background: rgba(16,185,129,0.25) !important;
+    border-color: #10B981 !important;
+}}
+
+/* ── Typing animation for chat placeholder ─────────────────────── */
+@keyframes blink {{ 0%,100% {{ opacity:1; }} 50% {{ opacity:0; }} }}
+.typing-cursor {{ animation: blink 1s step-start infinite; }}
 </style>
 """
 
 st.markdown(_generate_main_css(is_dark), unsafe_allow_html=True)
+
+# ── Sidebar: Saved Charts + Dataset Profile ──────────────────────────────
+with st.sidebar:
+    st.markdown(f"""
+    <div style="padding:0.5rem 0 0.25rem;">
+      <span style="font-size:1.2rem;font-weight:900;color:{text_main};">data</span><span
+        style="font-size:1.2rem;font-weight:900;color:{accent};font-family:'Noto Sans Devanagari',sans-serif;">दर्शनम्</span>
+    </div>
+    """, unsafe_allow_html=True)
+    st.divider()
+
+    # ── Saved Charts ──────────────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section-title">📌 Saved Charts</div>', unsafe_allow_html=True)
+    if not st.session_state.saved_charts:
+        st.caption("Pin a chart using the 📌 button below any result.")
+    else:
+        for _si, _sc in enumerate(st.session_state.saved_charts):
+            col_sc, col_del = st.columns([5, 1])
+            with col_sc:
+                if st.button(
+                    f"📊 {_sc['query'][:38]}{'…' if len(_sc['query']) > 38 else ''}",
+                    use_container_width=True,
+                    key=f"saved_jump_{_si}",
+                ):
+                    st.toast(f"Showing: {_sc['query'][:60]}")
+            with col_del:
+                if st.button("✕", key=f"del_saved_{_si}", help="Remove"):
+                    st.session_state.saved_charts.pop(_si)
+                    st.rerun()
+
+        # Export saved insights as HTML
+        if st.session_state.saved_charts:
+            st.markdown("---")
+            _html_export = "<html><head><style>body{font-family:Inter,sans-serif;background:#0A0F1E;color:#fff;padding:2rem;}"                            "h2{color:#6366F1;} p{color:#94A3B8;font-size:0.9rem;} hr{border-color:#1E293B;}</style></head><body>"
+            _html_export += "<h1>📊 dataदर्शनम् — Saved Insights</h1><hr>"
+            for _sc in st.session_state.saved_charts:
+                _html_export += f"<h2>{_sc['query']}</h2>"
+                _html_export += f"<p><b>Insight:</b> {_sc.get('insight','')}</p>"
+                _sum = _sc.get('summary', {})
+                if _sum:
+                    _html_export += f"<p>Total: {_sum.get('total','—')} · Top: {_sum.get('max_label','—')} ({_sum.get('max_value','—')})</p>"
+                _html_export += "<hr>"
+            _html_export += "</body></html>"
+            st.download_button(
+                "📤 Export Insights (HTML)",
+                data=_html_export,
+                file_name="datadarshanam_insights.html",
+                mime="text/html",
+                use_container_width=True,
+                key="export_insights_html"
+            )
+
+    st.divider()
+
+    # ── Dataset Profile ───────────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section-title">🗃️ Dataset Profile</div>', unsafe_allow_html=True)
+    _prof = data_engine.get_dataset_profile()
+    st.markdown(
+        f"""<div style="font-size:0.8rem;color:{text_muted};line-height:1.9;">
+        <b style="color:{text_main};">{_prof['rows']:,}</b> rows &nbsp;·&nbsp;
+        <b style="color:{text_main};">{_prof['column_count']}</b> columns
+        </div>""",
+        unsafe_allow_html=True,
+    )
+
+    _num_cols = _prof.get("numeric_columns", [])
+    _cat_cols = _prof.get("categorical_columns", [])
+    _dat_cols = _prof.get("date_columns", [])
+
+    if _num_cols:
+        st.markdown(f'<div style="margin-top:0.5rem;font-size:0.7rem;color:{text_muted};font-weight:600;letter-spacing:0.06em;">📈 NUMERIC</div>', unsafe_allow_html=True)
+        for _c in _num_cols[:6]:
+            st.markdown(f'<span class="col-pill">📊 {_c}</span>', unsafe_allow_html=True)
+    if _cat_cols:
+        st.markdown(f'<div style="margin-top:0.5rem;font-size:0.7rem;color:{text_muted};font-weight:600;letter-spacing:0.06em;">🏷️ CATEGORICAL</div>', unsafe_allow_html=True)
+        for _c in _cat_cols[:6]:
+            st.markdown(f'<span class="col-pill">🔤 {_c}</span>', unsafe_allow_html=True)
+    if _dat_cols:
+        st.markdown(f'<div style="margin-top:0.5rem;font-size:0.7rem;color:{text_muted};font-weight:600;letter-spacing:0.06em;">📅 DATE</div>', unsafe_allow_html=True)
+        for _c in _dat_cols[:4]:
+            st.markdown(f'<span class="col-pill">📅 {_c}</span>', unsafe_allow_html=True)
+
+    # Full column detail
+    with st.expander("All columns detail", expanded=False):
+        for _col_info in _prof.get("columns", []):
+            _role_icon = {"numeric": "📈", "categorical": "🏷️", "date/time": "📅", "text": "📝"}.get(_col_info.get("role",""), "❓")
+            st.markdown(
+                f'<div style="font-size:0.73rem;margin-bottom:0.4rem;color:{text_muted};">'
+                f'{_role_icon} <b style="color:{text_main};">{_col_info["name"]}</b> '
+                f'<span style="opacity:0.6;">({_col_info.get("role","")})</span></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+
+    # ── How it Works ─────────────────────────────────────────────────────
+    with st.expander("⚙️ How It Works", expanded=False):
+        _steps = [
+            ("Your Question", "You type a plain-English question — no SQL needed."),
+            ("Groq LLaMA 3.3", "70B model parses intent: metric, dimensions, filters, chart type."),
+            ("Query Plan → Pandas", "Structured plan executes against your CSV using Pandas groupby/agg."),
+            ("Plotly Chart", "Result is rendered as an interactive Plotly chart with your chosen theme."),
+            ("AI Insight", "LLaMA generates a 2–3 sentence plain-English insight from the data."),
+        ]
+        for _i, (_title, _desc) in enumerate(_steps, 1):
+            st.markdown(
+                f'<div class="pipeline-step">'
+                f'<div class="pipeline-num">{_i}</div>'
+                f'<div class="pipeline-step-body">'
+                f'<div class="pipeline-step-title">{_title}</div>'
+                f'<div class="pipeline-step-desc">{_desc}</div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.divider()
+    st.markdown(
+        f'<div style="font-size:0.65rem;color:{text_muted};text-align:center;">Powered by Groq · LLaMA 3.3 · Plotly</div>',
+        unsafe_allow_html=True,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Main header
@@ -397,26 +762,70 @@ def _skeleton_html() -> str:
 # Main header
 # ---------------------------------------------------------------------------
 
-col_title, col_counter = st.columns([4, 1])
-with col_title:
+_query_count = len(st.session_state.chat_history)
+
+if _query_count == 0:
+    # ── HERO (shown only on first visit) ──────────────────────────────────
     st.markdown(f"""
-    <div style="margin-bottom:4px;">
-      <span style="font-size:40px; font-weight:900; color:{text_main};">data</span><span
-            style="font-size:40px; font-weight:900; color:{accent};
-                   font-family:'Noto Sans Devanagari',sans-serif;">दर्शनम्</span>
-    </div>
-    <div style="color:{text_muted}; font-size:13px; margin-bottom:24px;">
-      Powered by Groq LLaMA 3.3 · Natural language → instant charts
+    <div class="hero-section">
+      <div class="hero-title">
+        <span style="color:{text_main};">data</span><span
+          style="color:{accent};font-family:'Noto Sans Devanagari',sans-serif;">दर्शनम्</span>
+      </div>
+      <div class="hero-subtitle">
+        Ask your business data anything — in plain English.<br>
+        Get instant interactive charts and AI-generated insights. No SQL. No code.
+      </div>
+      <div>
+        <span class="hero-tag">🤖 Groq LLaMA 3.3</span>
+        <span class="hero-tag">📊 Plotly Charts</span>
+        <span class="hero-tag">🐼 Pandas Engine</span>
+        <span class="hero-tag">🔒 No SQL Needed</span>
+      </div>
+      <div class="hero-feature-grid">
+        <div class="hero-feature-card">
+          <div class="hero-feature-icon">💬</div>
+          <div class="hero-feature-title">Natural Language</div>
+          <div class="hero-feature-desc">Type queries the way you think. The AI handles the rest.</div>
+        </div>
+        <div class="hero-feature-card">
+          <div class="hero-feature-icon">⚡</div>
+          <div class="hero-feature-title">Instant Charts</div>
+          <div class="hero-feature-desc">Bar, line, pie, scatter — auto-selected for your data.</div>
+        </div>
+        <div class="hero-feature-card">
+          <div class="hero-feature-icon">🧠</div>
+          <div class="hero-feature-title">AI Insights</div>
+          <div class="hero-feature-desc">Every chart comes with a 2–3 sentence expert takeaway.</div>
+        </div>
+        <div class="hero-feature-card">
+          <div class="hero-feature-icon">📂</div>
+          <div class="hero-feature-title">Your Data</div>
+          <div class="hero-feature-desc">Upload any CSV — the AI adapts to your schema instantly.</div>
+        </div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
-with col_counter:
-    count = len(st.session_state.chat_history)
-    st.markdown(f"""
-    <div style="text-align:right; padding-top:12px;
-                color:{text_muted}; font-size:13px;">
-      📊 {count} quer{"y" if count == 1 else "ies"} answered
-    </div>
-    """, unsafe_allow_html=True)
+else:
+    # ── Compact header (after first query) ───────────────────────────────
+    col_title, col_counter = st.columns([4, 1])
+    with col_title:
+        st.markdown(f"""
+        <div style="margin-bottom:4px;">
+          <span style="font-size:32px; font-weight:900; color:{text_main};">data</span><span
+                style="font-size:32px; font-weight:900; color:{accent};
+                       font-family:'Noto Sans Devanagari',sans-serif;">दर्शनम्</span>
+        </div>
+        <div style="color:{text_muted}; font-size:12px; margin-bottom:16px;">
+          Powered by Groq LLaMA 3.3 · Natural language → instant charts
+        </div>
+        """, unsafe_allow_html=True)
+    with col_counter:
+        st.markdown(f"""
+        <div style="text-align:right; padding-top:10px; color:{text_muted}; font-size:13px;">
+          📊 {_query_count} quer{"y" if _query_count == 1 else "ies"} answered
+        </div>
+        """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------------------------
 # Inline Controls - ROW 1
@@ -487,25 +896,6 @@ st.divider()
 # ---------------------------------------------------------------------------
 
 profile = data_engine.get_dataset_profile()
-metric_cols = profile.get("numeric_columns", [])[:4]
-dimension_cols = (
-    profile.get("categorical_columns", []) + profile.get("date_columns", [])
-)[:4]
-st.markdown(
-    f"""
-    <div class="summary-card" style="margin-bottom:1rem;">
-      <div class="summary-header">Active Dataset</div>
-      <div style="color:{text_main}; font-size:14px; font-weight:600;">
-        {profile['rows']:,} rows / {profile['column_count']} columns
-      </div>
-      <div style="color:{text_muted}; font-size:12px; margin-top:0.45rem;">
-        Metrics: {", ".join(metric_cols) if metric_cols else "none detected"}<br>
-        Dimensions: {", ".join(dimension_cols) if dimension_cols else "none detected"}
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 # ---------------------------------------------------------------------------
 # Inline Controls - ROW 2: Example Queries
@@ -608,12 +998,13 @@ def _render_dashboard_entry(entry: dict, entry_index: int = 0) -> None:
 def _render_entry(entry: dict, entry_index: int = 0) -> None:
     query   = entry["query"]
     result  = entry["result"]
-    fig     = entry["fig"]
     insight = entry["insight"]
 
+    # ── Build user bubble with optional follow-up badge ───────────────────
+    _followup_badge = '<span class="followup-badge">🔗 Follow-up</span>' if entry.get("used_context") else ""
     st.markdown(
         f'<div class="chat-user-row">'
-        f'<div class="chat-bubble-user">{query}</div>'
+        f'<div class="chat-bubble-user">{query}{_followup_badge}</div>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -629,8 +1020,20 @@ def _render_entry(entry: dict, entry_index: int = 0) -> None:
     summary   = result.get("summary", {})
     metric    = result.get("metric", "value")
     data_rows = result.get("data", [])
+    parsed    = entry.get("parsed", {})
 
-    # Row 1: 4 KPI tiles
+    # ── Active filter pills ───────────────────────────────────────────────
+    _filters = parsed.get("filters", [])
+    if _filters:
+        _filter_html = '<div class="filter-row">'
+        _icon_map = {"year": "📅", "month": "📅", "quarter": "📅", "region": "🌍"}
+        for _f in _filters:
+            _fi = _icon_map.get(_f.get("field","").lower(), "🔍")
+            _filter_html += f'<span class="filter-chip">{_fi} {_f.get("field","")}: {_f.get("value","")}</span>'
+        _filter_html += '</div>'
+        st.markdown(_filter_html, unsafe_allow_html=True)
+
+    # ── Row 1: 4 KPI tiles ────────────────────────────────────────────────
     k1, k2, k3, k4 = st.columns(4, gap="medium")
     with k1:
         st.markdown(_kpi_card("Total", _fmt_number(summary.get("total", 0), metric)), unsafe_allow_html=True)
@@ -641,29 +1044,92 @@ def _render_entry(entry: dict, entry_index: int = 0) -> None:
     with k4:
         st.markdown(_kpi_card("Top Value", _fmt_number(summary.get("max_value", 0), metric)), unsafe_allow_html=True)
 
-    # Row 2: chart (70%) | insight + table (30%)
+    # ── Row 2: chart (70%) | insight + table (30%) ────────────────────────
     col_chart, col_right = st.columns([7, 3], gap="medium")
 
+    # Chart type switcher — persisted in session state per entry
+    _ct_key = f"chart_type_{entry_index}"
+    _ct_options = ["auto", "bar", "line", "pie", "scatter", "area"]
+    _current_ct = st.session_state.get(_ct_key, "auto")
+    _chart_override = None if _current_ct == "auto" else _current_ct
+
     with col_chart:
-        _live_fig = build_chart(entry["result"], is_dark=(st.session_state.theme == "dark"))
+        # ── Chart type pill row ──────────────────────────────────────────
+        _pill_cols = st.columns(len(_ct_options))
+        for _pi, _ct in enumerate(_ct_options):
+            with _pill_cols[_pi]:
+                _active_cls = "active" if _ct == _current_ct else ""
+                _ct_label = {"auto": "✨ Auto", "bar": "Bar", "line": "Line",
+                             "pie": "Pie", "scatter": "Scatter", "area": "Area"}.get(_ct, _ct.title())
+                if st.button(_ct_label, key=f"ct_{entry_index}_{_ct}",
+                             use_container_width=True,
+                             help=f"Switch to {_ct} chart"):
+                    st.session_state[_ct_key] = _ct
+                    st.rerun()
+
+        # ── Render chart ─────────────────────────────────────────────────
+        _render_result = dict(result)
+        if _chart_override:
+            _render_result = {**result, "chart_type": _chart_override}
+        _live_fig = build_chart(_render_result, is_dark=(st.session_state.theme == "dark"))
         st.markdown('<div class="chart-card">', unsafe_allow_html=True)
         st.plotly_chart(
-        _live_fig,
-        use_container_width=True,
-        key=f"chart_{entry_index}",
-        config={
-            'displayModeBar': True,
-            'displaylogo': False,
-            'modeBarButtonsToAdd': ['resetScale2d'],
-            'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
-            'scrollZoom': True,
-            'doubleClick': 'reset'
-        }
-    )
+            _live_fig,
+            use_container_width=True,
+            key=f"chart_{entry_index}",
+            config={
+                'displayModeBar': True,
+                'displaylogo': False,
+                'modeBarButtonsToAdd': ['resetScale2d'],
+                'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+                'scrollZoom': True,
+                'doubleClick': 'reset'
+            }
+        )
         st.markdown('</div>', unsafe_allow_html=True)
 
+        # ── Download CSV ─────────────────────────────────────────────────
+        if data_rows:
+            _csv_df = pd.DataFrame(data_rows)
+            _csv_bytes = _csv_df.to_csv(index=False).encode("utf-8")
+            dl_col, pin_col = st.columns([3, 1])
+            with dl_col:
+                st.download_button(
+                    "📥 Download Data (CSV)",
+                    data=_csv_bytes,
+                    file_name=f"query_{entry_index}_{metric}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key=f"dl_csv_{entry_index}",
+                )
+            with pin_col:
+                if st.button("📌 Save", key=f"pin_{entry_index}", use_container_width=True,
+                             help="Save this chart to the sidebar"):
+                    _already_saved = any(s["query"] == query for s in st.session_state.saved_charts)
+                    if not _already_saved:
+                        st.session_state.saved_charts.append({
+                            "query":   query,
+                            "insight": insight,
+                            "summary": summary,
+                            "metric":  metric,
+                        })
+                        st.toast("📌 Chart saved to sidebar!")
+                    else:
+                        st.toast("Already saved.")
+
     with col_right:
-        st.markdown(_insight_card(insight), unsafe_allow_html=True)
+        # ── Insight card with badge ───────────────────────────────────────
+        _insight_badge = (
+            '<span class="est-badge">⚠️ Estimated</span>' if entry.get("fallback")
+            else '<span class="ai-badge">🤖 AI</span>'
+        )
+        st.markdown(
+            f'<div class="insight-card">'
+            f'<div class="insight-header">💡 AI Insight {_insight_badge}</div>'
+            f'<div class="insight-text">{insight}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         if data_rows:
             st.markdown(
@@ -674,7 +1140,7 @@ def _render_entry(entry: dict, entry_index: int = 0) -> None:
             )
             st.dataframe(pd.DataFrame(data_rows).head(5), use_container_width=True, hide_index=True)
 
-    # Row 3: full dataset expander
+    # ── Row 3: full dataset expander ─────────────────────────────────────
     if data_rows:
         with st.expander("View Full Dataset", expanded=False):
             st.dataframe(pd.DataFrame(data_rows), use_container_width=True, hide_index=True)
@@ -729,11 +1195,13 @@ def _run_pipeline(query: str) -> None:
             st.toast("⚠️ Using fallback response")
 
     entry = {
-        "query":   query,
-        "parsed":  parsed,
-        "result":  result,
-        "fig":     fig,
-        "insight": insight,
+        "query":        query,
+        "parsed":       parsed,
+        "result":       result,
+        "fig":          fig,
+        "insight":      insight,
+        "used_context": previous_context is not None,
+        "fallback":     insight_gen._last_used_fallback,
     }
     st.session_state.chat_history.append(entry)
     _render_entry(entry, entry_index=len(st.session_state.chat_history) - 1)
@@ -770,7 +1238,9 @@ for _ei, entry in enumerate(st.session_state.chat_history):
 # Chat input
 # ---------------------------------------------------------------------------
 
-query_input   = st.chat_input("Ask a question about your sales data…")
+_example_hints = data_engine.suggest_questions(3)
+_placeholder = _example_hints[0] if _example_hints else "Ask a question about your data…"
+query_input   = st.chat_input(_placeholder)
 pending_query = st.session_state.pop("pending_query", None)
 active_query  = query_input or pending_query
 
