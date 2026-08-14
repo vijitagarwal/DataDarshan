@@ -109,3 +109,21 @@ export interface ChatEntry {
   isLoading?: boolean;
   chartTypeOverride?: string;
 }
+
+
+export interface MetricItem {
+  label: string;
+  key: string;
+  format: "currency" | "number" | "percent";
+}
+
+export interface ChartConfig {
+  xKey?: string;
+  yKey?: string;
+  title?: string;
+  xLabel?: string;
+  yLabel?: string;
+  groupKey?: string;
+  metrics?: MetricItem[];
+}
+
