@@ -10,7 +10,7 @@ interface KpiTilesProps {
 
 const REVENUE_METRICS = new Set(["total_revenue", "discounted_price", "price", "revenue", "sales"]);
 
-function formatNumber(val: number | undefined, metric: str = ""): string {
+function formatNumber(val: number | undefined, metric: string = ""): string {
   if (val === undefined || val === null || isNaN(val)) return "—";
   
   const metricLower = (metric || "").toLowerCase();
