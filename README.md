@@ -69,6 +69,21 @@ Designed with a premium dark mode UI inspired by **Linear**, **Vercel**, and **P
 
 ## 🚀 Running Locally
 
+### Environment configuration
+
+Create `backend/.env` for local development. Keep secrets out of source control.
+
+```env
+GROQ_API_KEY=your-groq-api-key
+ALLOWED_ORIGINS=http://localhost:3000
+MAX_UPLOAD_BYTES=26214400
+MAX_UPLOAD_ROWS=250000
+MAX_UPLOAD_COLUMNS=100
+```
+
+For a deployed frontend, set `NEXT_PUBLIC_API_URL` to the public backend URL before building.
+Each browser profile receives a workspace identifier stored locally, so uploaded datasets are isolated from other browser sessions. This is session/workspace isolation, not user authentication; add authentication before treating it as a multi-tenant service.
+
 ### 1. Start FastAPI Backend
 ```bash
 cd backend
