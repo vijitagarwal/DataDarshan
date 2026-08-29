@@ -57,10 +57,12 @@ export const QueryResult: React.FC<QueryResultProps> = ({
   const handleDownloadCSV = () => {
     if (!dataRows || dataRows.length === 0) return;
     const keys = Object.keys(dataRows[0]);
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [keys.join(","), ...dataRows.map((r) => keys.map((k) => `"${r[k]}"`).join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const escapeCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const csvContent = [
+      keys.map(escapeCell).join(","),
+      ...dataRows.map((row) => keys.map((key) => escapeCell(row[key])).join(",")),
+    ].join("\n");
+    const encodedUri = `data:text/csv;charset=utf-8,${encodeURIComponent(csvContent)}`;
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
     link.setAttribute("download", `query_${entryIndex}_${metric}.csv`);
@@ -78,6 +80,7 @@ export const QueryResult: React.FC<QueryResultProps> = ({
         summary,
         metric,
         timestamp: Date.now(),
+        response,
       });
     }
   };

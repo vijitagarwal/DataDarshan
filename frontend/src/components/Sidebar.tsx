@@ -15,28 +15,38 @@ import {
   ChevronUp,
   FileSpreadsheet,
   CheckCircle2,
+  AlertCircle,
+  X,
 } from "lucide-react";
 
 interface SidebarProps {
   profile?: DatasetProfile;
+  schemaError?: string | null;
   savedCharts: SavedChart[];
   chatEntries: ChatEntry[];
   onNewChat: () => void;
   onSelectQuery: (query: string) => void;
+  onRestoreSaved: (response: SavedChart["response"]) => void;
   onRemoveSavedChart: (id: string) => void;
   onUploadCSV: (file: File) => void;
   isUploading?: boolean;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   profile,
+  schemaError,
   savedCharts,
   chatEntries,
   onNewChat,
   onSelectQuery,
+  onRestoreSaved,
   onRemoveSavedChart,
   onUploadCSV,
   isUploading = false,
+  isOpen = false,
+  onClose,
 }) => {
   const [showColumnsDetail, setShowColumnsDetail] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
@@ -79,13 +89,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   return (
-    <aside className="w-72 bg-[#0d1117] border-r border-indigo-500/10 flex flex-col h-screen shrink-0 text-slate-200 select-none">
+    <>
+      {isOpen && <button aria-label="Close navigation" onClick={onClose} className="fixed inset-0 z-30 bg-black/60 md:hidden" />}
+      <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0d1117] border-r border-indigo-500/10 flex flex-col h-screen shrink-0 text-slate-200 select-none transition-transform duration-200 md:static md:z-auto md:translate-x-0 ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
       {/* Brand Header */}
       <div className="p-4 border-b border-indigo-500/10 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-indigo-500/30">
             📊
           </div>
+          <button onClick={onClose} aria-label="Close navigation" className="p-1.5 text-slate-400 hover:text-white md:hidden">
+            <X className="w-4 h-4" />
+          </button>
           <div>
             <h1 className="text-lg font-black tracking-tight text-white leading-none">
               data<span className="text-gradient-devanagari ml-0.5">दर्शनम्</span>
@@ -138,7 +153,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           <div className="glass-card p-3 space-y-2">
-            {profile ? (
+            {schemaError ? (
+              <div className="flex items-start gap-2 text-red-300 leading-relaxed">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{schemaError}</span>
+              </div>
+            ) : profile ? (
               <>
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-slate-100 text-xs">
@@ -239,7 +259,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               {savedCharts.map((sc) => (
                 <div key={sc.id} className="glass-card p-2.5 flex items-start justify-between gap-2 group">
                   <button
-                    onClick={() => onSelectQuery(sc.query)}
+                    onClick={() => sc.response && onRestoreSaved(sc.response)}
+                    disabled={!sc.response}
                     className="text-left flex-1 text-xs font-medium text-slate-200 group-hover:text-indigo-300 truncate"
                   >
                     📌 {sc.query}
@@ -304,6 +325,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="p-3 border-t border-indigo-500/10 text-center text-[10px] text-slate-400">
         Groq LLaMA 3.3 · Plotly · Pandas
       </div>
-    </aside>
+      </aside>
+    </>
   );
 };

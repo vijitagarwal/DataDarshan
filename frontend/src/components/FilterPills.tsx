@@ -31,7 +31,8 @@ export const FilterPills: React.FC<FilterPillsProps> = ({ filters }) => {
         >
           {getIcon(f.field)}
           <span>
-            <strong className="capitalize">{f.field.replace(/_/g, " ")}</strong>: {String(f.value)}
+            <strong className="capitalize">{f.field.replace(/_/g, " ")}</strong>{" "}
+            {f.operator || "eq"} {String(f.value)}
           </span>
         </span>
       ))}

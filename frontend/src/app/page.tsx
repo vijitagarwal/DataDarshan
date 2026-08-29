@@ -8,7 +8,7 @@ import { DashboardView } from "@/components/DashboardView";
 import { ChatInputBar } from "@/components/ChatInputBar";
 import { fetchSchema, postQuery, postDashboardQuery, uploadCSVFile } from "@/lib/api";
 import { SchemaResponse, ChatEntry, SavedChart } from "@/lib/types";
-import { RefreshCw, Database, Trash2, Layers } from "lucide-react";
+import { Database, Trash2, Layers, Menu } from "lucide-react";
 
 export default function Home() {
   const [schema, setSchema] = useState<SchemaResponse | null>(null);
@@ -16,12 +16,22 @@ export default function Home() {
   const [savedCharts, setSavedCharts] = useState<SavedChart[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [datasetName, setDatasetName] = useState("sales.csv");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Load dataset schema on initial mount
   useEffect(() => {
     fetchSchema()
-      .then((data) => setSchema(data))
-      .catch((err) => console.error("Error fetching schema:", err));
+      .then((data) => {
+        setSchema(data);
+        setSchemaError(null);
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Unable to connect to the backend API.";
+        console.error("Error fetching schema:", err);
+        setSchemaError(message);
+      });
   }, []);
 
   // Handle natural query execution
@@ -69,7 +79,8 @@ export default function Home() {
           )
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to process query";
       setChatEntries((prev) =>
         prev.map((e) =>
           e.id === entryId
@@ -80,8 +91,8 @@ export default function Home() {
                   success: false,
                   error: true,
                   query: queryStr,
-                  insight: err.message || "Failed to process query",
-                  message: err.message || "Failed to process query",
+                  insight: message,
+                  message,
                 },
               }
             : e
@@ -121,9 +132,14 @@ export default function Home() {
     try {
       const newSchema = await uploadCSVFile(file);
       setSchema(newSchema);
+      setDatasetName(newSchema.filename);
+      setSchemaError(null);
       setChatEntries([]);
-    } catch (err: any) {
-      alert(`Upload failed: ${err.message}`);
+      setSavedCharts([]);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unable to upload CSV.";
+      setSchemaError(message);
+      alert(`Upload failed: ${message}`);
     } finally {
       setIsUploading(false);
     }
@@ -136,23 +152,33 @@ export default function Home() {
       {/* Left Sidebar */}
       <Sidebar
         profile={schema?.profile}
+        schemaError={schemaError}
         savedCharts={savedCharts}
         chatEntries={chatEntries}
         onNewChat={handleNewChat}
         onSelectQuery={(q) => handleSendQuery(q)}
+        onRestoreSaved={(response) => {
+          if (!response) return;
+          setChatEntries((prev) => [...prev, { id: `restored-${Date.now()}`, type: "query", query: response.query, response }]);
+        }}
         onRemoveSavedChart={handleRemoveSavedChart}
         onUploadCSV={handleUploadCSV}
         isUploading={isUploading}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-hidden bg-[#0d1117] relative">
         {/* Top Header Bar */}
-        <header className="h-14 border-b border-indigo-500/10 px-6 flex items-center justify-between shrink-0 bg-[#0d1117]/80 backdrop-blur-md">
+        <header className="h-14 border-b border-indigo-500/10 px-4 md:px-6 flex items-center justify-between shrink-0 bg-[#0d1117]/80 backdrop-blur-md">
           <div className="flex items-center gap-3">
+            <button onClick={() => setIsSidebarOpen(true)} aria-label="Open navigation" className="p-1.5 text-slate-400 hover:text-white md:hidden">
+              <Menu className="w-5 h-5" />
+            </button>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
               <Database className="w-3.5 h-3.5 text-indigo-400" />
-              <span>sales.csv ({schema?.profile?.rows?.toLocaleString() || "—"} rows)</span>
+              <span>{datasetName} ({schema?.profile?.rows?.toLocaleString() || "—"} rows)</span>
             </span>
           </div>
 

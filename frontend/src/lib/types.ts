@@ -91,6 +91,11 @@ export interface SchemaResponse {
   suggested_questions: string[];
 }
 
+export interface UploadResponse extends SchemaResponse {
+  filename: string;
+  rows: number;
+}
+
 export interface SavedChart {
   id: string;
   query: string;
@@ -98,6 +103,7 @@ export interface SavedChart {
   summary?: QuerySummary;
   metric?: string;
   timestamp: number;
+  response?: QueryResponse;
 }
 
 export interface ChatEntry {
