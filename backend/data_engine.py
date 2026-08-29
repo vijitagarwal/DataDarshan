@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
+from pathlib import Path
 
 import pandas as pd
 
-DATA_PATH = "sales.csv"
+DATA_PATH = Path(__file__).resolve().parent / "sales.csv"
 ROW_COUNT_METRIC = "__row_count"
 _TIME_COLUMNS = {"year", "month", "month_name", "quarter"}
 _MONTH_ORDER = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -57,7 +59,21 @@ def _load_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path)
     return _prepare_dataframe(df)
 
-_DF: pd.DataFrame = _load_data(DATA_PATH)
+_DEFAULT_WORKSPACE = "default"
+_workspace_id: ContextVar[str] = ContextVar("workspace_id", default=_DEFAULT_WORKSPACE)
+_datasets: dict[str, pd.DataFrame] = {_DEFAULT_WORKSPACE: _load_data(DATA_PATH)}
+
+
+def set_workspace(workspace_id: str) -> None:
+    """Select the dataset workspace for the current request context."""
+    _workspace_id.set(workspace_id or _DEFAULT_WORKSPACE)
+
+
+def _current_dataframe() -> pd.DataFrame:
+    workspace_id = _workspace_id.get()
+    if workspace_id not in _datasets:
+        _datasets[workspace_id] = _datasets[_DEFAULT_WORKSPACE].copy()
+    return _datasets[workspace_id]
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -262,14 +278,13 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def set_dataframe(df: pd.DataFrame) -> None:
-    """Replace the active DataFrame used by run_query."""
-    global _DF
-    _DF = _prepare_dataframe(df)
+    """Replace the DataFrame for the current workspace."""
+    _datasets[_workspace_id.get()] = _prepare_dataframe(df)
 
 
 def get_dataframe() -> pd.DataFrame:
     """Return the cached raw DataFrame (for reference / display purposes)."""
-    return _DF.copy()
+    return _current_dataframe().copy()
 
 
 def _role_for_column(df: pd.DataFrame, col: str) -> str:
@@ -285,7 +300,7 @@ def _role_for_column(df: pd.DataFrame, col: str) -> str:
 
 def get_dataset_profile(df: pd.DataFrame | None = None) -> dict:
     """Return a compact, UI/LLM-friendly profile of the active dataset."""
-    source = _DF if df is None else df
+    source = _current_dataframe() if df is None else df
     rows = len(source)
     columns = []
 
@@ -381,7 +396,8 @@ def suggest_questions(limit: int = 5) -> list[str]:
     profile = get_dataset_profile()
     metric = _pick_metric(profile)
     category = _pick_category(profile)
-    date_dim = "month_name" if "month_name" in _DF.columns else (
+    current_df = _current_dataframe()
+    date_dim = "month_name" if "month_name" in current_df.columns else (
         profile["date_columns"][0] if profile["date_columns"] else None
     )
 
@@ -432,9 +448,9 @@ def build_overview_queries() -> list[dict]:
         })
 
     time_dim = None
-    if "month_name" in _DF.columns:
+    if "month_name" in current_df.columns:
         time_dim = "month_name"
-    elif "year" in _DF.columns:
+    elif "year" in current_df.columns:
         time_dim = "year"
     elif profile["date_columns"]:
         time_dim = profile["date_columns"][0]
@@ -511,7 +527,7 @@ def run_query(parsed: dict) -> dict:
     x_label    = parsed.get("x_label", dimensions[0] if dimensions else "")
     y_label    = parsed.get("y_label", metric)
 
-    df = _DF.copy()
+    df = _current_dataframe().copy()
 
     # --- Apply filters ---
     df, filter_err = _apply_filters(df, filters)

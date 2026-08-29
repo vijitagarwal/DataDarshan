@@ -2,14 +2,16 @@
 import io
 import json
 import traceback
+import re
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import chart_builder
+import config
 import data_engine
 import insight_gen
 import llm_parser
@@ -22,25 +24,38 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=config.ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
+@app.middleware("http")
+async def workspace_middleware(request, call_next):
+    workspace_id = request.headers.get("X-Workspace-ID", "default")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,64}", workspace_id):
+        raise HTTPException(status_code=400, detail="Invalid workspace identifier")
+    data_engine.set_workspace(workspace_id)
+    return await call_next(request)
+
+
 class QueryRequest(BaseModel):
-    query: str
+    query: str = Field(min_length=1, max_length=2000)
     previous_context: Optional[Dict[str, Any]] = None
 
 
 class DashboardRequest(BaseModel):
-    query: str = "generate full dashboard overview"
+    query: str = Field(default="generate full dashboard overview", max_length=500)
 
 
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "service": "dataदर्शनम् API"}
+    return {
+        "status": "ok",
+        "service": "DataDarshan API",
+        "ai_configured": bool(config.GROQ_API_KEY),
+    }
 
 
 @app.get("/api/schema")
@@ -52,8 +67,9 @@ def get_schema():
             "profile": profile,
             "suggested_questions": suggested,
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Unable to load dataset schema")
 
 
 @app.post("/api/query")
@@ -114,9 +130,9 @@ def run_nl_query(req: QueryRequest):
             },
         }
 
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Query execution error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Query execution failed")
 
 
 @app.post("/api/dashboard")
@@ -152,20 +168,41 @@ def run_dashboard_query(req: DashboardRequest):
             "query": query,
             "charts": charts
         }
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Dashboard generation failed")
 
 
 @app.post("/api/upload")
 async def upload_csv(file: UploadFile = File(...)):
-    if not file.filename.endswith(".csv"):
+    filename = file.filename or ""
+    if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="File must be a CSV format")
 
     try:
-        contents = await file.read()
-        raw_str = contents.decode("utf-8")
+        contents = bytearray()
+        while chunk := await file.read(1024 * 1024):
+            contents.extend(chunk)
+            if len(contents) > config.MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"CSV file exceeds the {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+                )
+
+        raw_str = bytes(contents).decode("utf-8-sig")
         df_up = pd.read_csv(io.StringIO(raw_str))
+        if df_up.empty:
+            raise HTTPException(status_code=400, detail="CSV file does not contain any rows")
+        if len(df_up) > config.MAX_UPLOAD_ROWS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV file exceeds the {config.MAX_UPLOAD_ROWS:,} row limit",
+            )
+        if len(df_up.columns) > config.MAX_UPLOAD_COLUMNS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV file exceeds the {config.MAX_UPLOAD_COLUMNS} column limit",
+            )
         df_up = data_engine.prepare_dataframe(df_up)
         data_engine.set_dataframe(df_up)
 
@@ -174,11 +211,17 @@ async def upload_csv(file: UploadFile = File(...)):
 
         return {
             "success": True,
-            "filename": file.filename,
+            "filename": filename,
             "rows": len(df_up),
             "profile": profile,
             "suggested_questions": suggested,
         }
-    except Exception as e:
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="CSV file must use UTF-8 encoding")
+    except pd.errors.ParserError:
+        raise HTTPException(status_code=400, detail="CSV file could not be parsed")
+    except HTTPException:
+        raise
+    except Exception:
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"CSV processing failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="CSV processing failed")
